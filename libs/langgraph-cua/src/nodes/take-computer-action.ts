@@ -219,6 +219,17 @@ export async function takeComputerAction(
         );
     }
 
+    // Wait for the page to settle after action
+    try {
+      // "domcontentloaded" is usually faster than "load" or "networkidle"
+      // We catch errors because sometimes timeouts happen if page is idle or backgrounded
+      await page.waitForLoadState("domcontentloaded", { timeout: 3000 }).catch(() => { });
+    } catch (e) {
+      // Ignore waiting errors
+    }
+    // Small explicit buffer for repaints/animations (500ms)
+    await sleep(500);
+
     // Always take a screenshot after action
     // Playwright screenshot returns Buffer
     const screenshotBuffer = await page.screenshot({ type: "png" });
