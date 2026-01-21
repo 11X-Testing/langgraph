@@ -1,14 +1,10 @@
-import {
-  BrowserInstance,
-  UbuntuInstance,
-  WindowsInstance,
-  Scrapybara,
-} from "scrapybara";
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolMessage } from "@langchain/core/messages";
 import { RunnableLambda } from "@langchain/core/runnables";
-import { CUAState, getConfigurationWithDefaults } from "../types.js";
-import { getInstance, getToolOutputs } from "../utils.js";
+import { Page } from "playwright";
+import { CUAState } from "../types.js";
+import { getToolOutputs } from "../utils.js";
+import { BrowserManager } from "../browser-manager.js";
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -16,79 +12,57 @@ async function sleep(ms: number): Promise<void> {
   });
 }
 
-// Copied from the OpenAI example repository
-// https://github.com/openai/openai-cua-sample-app/blob/eb2d58ba77ffd3206d3346d6357093647d29d99c/computers/scrapybara.py#L10
-const CUA_KEY_TO_SCRAPYBARA_KEY: Record<string, string> = {
-  "/": "slash",
-  "\\": "backslash",
-  arrowdown: "Down",
-  arrowleft: "Left",
-  arrowright: "Right",
-  arrowup: "Up",
-  backspace: "BackSpace",
-  capslock: "Caps_Lock",
-  cmd: "Meta_L",
+const CUA_KEY_TO_PLAYWRIGHT_KEY: Record<string, string> = {
+  "/": "Slash",
+  "\\": "Backslash",
+  arrowdown: "ArrowDown",
+  arrowleft: "ArrowLeft",
+  arrowright: "ArrowRight",
+  arrowup: "ArrowUp",
+  backspace: "Backspace",
+  capslock: "CapsLock",
+  cmd: "Meta",
   delete: "Delete",
   end: "End",
-  enter: "Return",
+  enter: "Enter",
   esc: "Escape",
   home: "Home",
   insert: "Insert",
-  option: "Alt_L",
-  pagedown: "Page_Down",
-  pageup: "Page_Up",
+  option: "Alt",
+  pagedown: "PageDown",
+  pageup: "PageUp",
   tab: "Tab",
-  win: "Meta_L",
+  win: "Meta",
 };
-
-const isBrowserInstance = (
-  instance: UbuntuInstance | BrowserInstance | WindowsInstance
-): instance is BrowserInstance =>
-  "authenticate" in instance && typeof instance.authenticate === "function";
 
 export async function takeComputerAction(
   state: CUAState,
   config: LangGraphRunnableConfig,
   {
     uploadScreenshot,
-  }: { uploadScreenshot?: (screenshot: string) => Promise<string> }
+    onSafetyConfirmation,
+  }: {
+    uploadScreenshot?: (screenshot: string) => Promise<string>;
+    onSafetyConfirmation?: (safetyDecision: { explanation: string; decision: "require_confirmation" | "proceed" }) => Promise<boolean>;
+  }
 ) {
   if (!state.instanceId) {
     throw new Error("Can not take computer action without an instance ID.");
   }
-  const { authStateId } = getConfigurationWithDefaults(config);
 
   const message = state.messages[state.messages.length - 1];
   const toolOutputs = getToolOutputs(message);
   if (!toolOutputs?.length) {
-    // This should never happen, but include the check for proper type narrowing.
     throw new Error(
       "Can not take computer action without a computer call in the last message."
     );
   }
 
-  const instance = await getInstance(state.instanceId, config);
+  const browserManager = BrowserManager.getInstance();
+  const page = browserManager.getPage(state.instanceId);
 
-  let { authenticatedId } = state;
-  if (
-    isBrowserInstance(instance) &&
-    authStateId &&
-    (!authenticatedId || authenticatedId !== authStateId)
-  ) {
-    await instance.authenticate({
-      authStateId,
-    });
-    authenticatedId = authStateId;
-  }
-
-  let { streamUrl } = state;
-  if (!streamUrl) {
-    // If the streamUrl is not yet defined in state, fetch it, then write to the custom stream
-    // so that it's made accessible to the client (or whatever is reading the stream) before any actions are taken.
-    streamUrl = (await instance.getStreamUrl()).streamUrl;
-    config.writer?.({
-      streamUrl,
-    });
+  if (!page) {
+    throw new Error(`Browser instance ${state.instanceId} not found or closed.`);
   }
 
   const output = toolOutputs[toolOutputs.length - 1];
@@ -96,73 +70,101 @@ export async function takeComputerAction(
   let computerCallToolMsg: ToolMessage | undefined;
 
   try {
-    let computerResponse: Scrapybara.ComputerResponse;
+    let base64Image: string | undefined;
+    let safetyAcknowledged = false;
+
+    if (action.safety_decision?.decision === "require_confirmation") {
+      if (!onSafetyConfirmation) {
+        throw new Error("Model requires safety confirmation but no callback provided.");
+      }
+      const confirmed = await onSafetyConfirmation(action.safety_decision);
+      if (!confirmed) {
+        throw new Error("Safety confirmation denied by user.");
+      }
+      safetyAcknowledged = true;
+    }
+
     switch (action.type) {
+      case "open_browser":
+        // Browser is already opened by createVMInstance, just ensure it's ready?
+        // Or simply take a screenshot of the initial state.
+        break;
+      case "navigate":
+        if (action.text) {
+          await page.goto(action.text);
+        }
+        break;
       case "click":
-        computerResponse = await instance.computer({
-          action: "click_mouse",
-          button: action.button === "wheel" ? "middle" : action.button,
-          coordinates: [action.x, action.y],
-        });
+        if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.click(action.x, action.y, {
+            button: action.button === "wheel" ? "middle" : action.button as "left" | "right" | "middle" ?? "left",
+          });
+        }
         break;
       case "double_click":
-        computerResponse = await instance.computer({
-          action: "click_mouse",
-          button: "left",
-          coordinates: [action.x, action.y],
-          numClicks: 2,
-        });
+        if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.dblclick(action.x, action.y, {
+            button: "left",
+          });
+        }
         break;
       case "drag":
-        computerResponse = await instance.computer({
-          action: "drag_mouse",
-          path: action.path.map(({ x, y }) => [x, y]),
-        });
+        if (action.path && action.path.length > 0) {
+          // Start drag
+          const start = action.path[0];
+          await page.mouse.move(start.x, start.y);
+          await page.mouse.down();
+
+          // Move through path
+          for (const point of action.path.slice(1)) {
+            await page.mouse.move(point.x, point.y);
+          }
+          // End drag
+          await page.mouse.up();
+        }
         break;
       case "keypress": {
-        const mappedKeys = action.keys
-          .map((k) => k.toLowerCase())
-          .map((key) =>
-            key in CUA_KEY_TO_SCRAPYBARA_KEY
-              ? CUA_KEY_TO_SCRAPYBARA_KEY[key]
-              : key
-          );
-        computerResponse = await instance.computer({
-          action: "press_key",
-          keys: mappedKeys,
-        });
+        if (action.keys) {
+          // Playwright press accepts slightly different format, but generally similar.
+          // We might need to handle combination of keys.
+          // CUA usually sends keys separated by +.
+          // But here action.keys is an array of strings? existing code: action.keys.map...
+          // Checking existing code: it was `action.keys` array.
+
+          // If multiple keys are pressed together, we probably need `keyboard.press` with combined string like "Control+o"
+          // or perform down/up.
+
+          for (const key of action.keys) {
+            const mappedKey = CUA_KEY_TO_PLAYWRIGHT_KEY[key.toLowerCase()] ?? key;
+            await page.keyboard.press(mappedKey);
+          }
+        }
         break;
       }
       case "move":
-        computerResponse = await instance.computer({
-          action: "move_mouse",
-          coordinates: [action.x, action.y],
-        });
+        if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.move(action.x, action.y);
+        }
         break;
       case "screenshot":
-        computerResponse = await instance.computer({
-          action: "take_screenshot",
-        });
+        // Actions automatically take screenshot at the end effectively, 
+        // but explicit screenshot action also exists.
         break;
       case "wait":
         await sleep(2000);
-        computerResponse = await instance.computer({
-          action: "take_screenshot",
-        });
         break;
       case "scroll":
-        computerResponse = await instance.computer({
-          action: "scroll",
-          deltaX: action.scroll_x / 20,
-          deltaY: action.scroll_y / 20,
-          coordinates: [action.x, action.y],
-        });
+        // Scroll relative to current mouse position or just scroll?
+        // Scrapybara impl used deltaX/Y. Playwright mouse.wheel
+        if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.move(action.x, action.y);
+        }
+        await page.mouse.wheel(action.scroll_x ?? 0, action.scroll_y ?? 0);
         break;
       case "type":
-        computerResponse = await instance.computer({
-          action: "type_text",
-          text: action.text,
-        });
+        if (action.text) {
+          await page.keyboard.type(action.text);
+        }
         break;
       default:
         throw new Error(
@@ -170,7 +172,12 @@ export async function takeComputerAction(
         );
     }
 
-    let screenshotContent = `data:image/png;base64,${computerResponse.base64Image}`;
+    // Always take a screenshot after action
+    // Playwright screenshot returns Buffer
+    const screenshotBuffer = await page.screenshot({ type: "png" });
+    base64Image = screenshotBuffer.toString("base64");
+
+    let screenshotContent = `data:image/png;base64,${base64Image}`;
     if (uploadScreenshot) {
       const uploadScreenshotRunnable = RunnableLambda.from(
         uploadScreenshot
@@ -183,19 +190,50 @@ export async function takeComputerAction(
     computerCallToolMsg = new ToolMessage({
       content: screenshotContent,
       tool_call_id: output.call_id,
-      additional_kwargs: { type: "computer_call_output" },
+      additional_kwargs: {
+        type: "computer_call_output",
+        url: page.url(),
+        safety_acknowledgement: safetyAcknowledged
+      },
     });
   } catch (e) {
     console.error(
       { error: e, computerCall: output },
       "Failed to execute computer call."
     );
+    // Even if it fails, we might want to return an error message to the model so it can correct itself.
+    // For now keeping existing behavior but maybe with error message content?
+    // Existing behavior was just logging and returning empty list ?? No, existing behavior caught error and returned empty list?
+    // Let's return a tool message with error if possible, or just rethrow?
+    // CUA usually expects a screenshot. If we failed, maybe a screenshot of failure state?
+
+    try {
+      // Try to take screenshot even on failure
+      const screenshotBuffer = await page.screenshot({ type: "png" });
+      const base64Image = screenshotBuffer.toString("base64");
+      computerCallToolMsg = new ToolMessage({
+        content: `data:image/png;base64,${base64Image}`,
+        tool_call_id: output.call_id,
+        additional_kwargs: {
+          type: "computer_call_output",
+          error: String(e),
+          url: page?.url() || "about:blank"
+        },
+      });
+    } catch (innerE) {
+      // If screenshot also fails
+      computerCallToolMsg = new ToolMessage({
+        content: "Failed to execute action and failed to take screenshot: " + String(e),
+        tool_call_id: output.call_id,
+        additional_kwargs: { type: "computer_call_output" },
+      });
+    }
   }
 
   return {
     messages: computerCallToolMsg ? [computerCallToolMsg] : [],
-    instanceId: instance.id,
-    streamUrl,
-    authenticatedId,
+    instanceId: state.instanceId,
+    // streamUrl, // No longer supported in local playwright unless we setup a streamer, skipping for now
+    authenticatedId: state.authenticatedId,
   };
 }

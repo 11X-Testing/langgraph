@@ -1811,12 +1811,18 @@ importers:
 
   libs/langgraph-cua:
     dependencies:
+      '@google/generative-ai':
+        specifier: ^0.24.1
+        version: 0.24.1
       '@langchain/core':
         specifier: ^1.0.1
         version: 1.1.15(openai@4.104.0(ws@8.19.0)(zod@4.3.5))
-      scrapybara:
-        specifier: ^2.4.4
-        version: 2.5.2
+      playwright:
+        specifier: ^1.49.0
+        version: 1.57.0
+      uuid:
+        specifier: ^11.0.3
+        version: 11.1.0
       zod:
         specifier: ^4.3.5
         version: 4.3.5
@@ -2728,6 +2734,10 @@ packages:
   '@fastify/busboy@2.1.1':
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
+
+  '@google/generative-ai@0.24.1':
+    resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
+    engines: {node: '>=18.0.0'}
 
   '@grpc/grpc-js@1.14.3':
     resolution: {integrity: sha512-Iq8QQQ/7X3Sac15oB6p0FmUg/klxQvXLeileoqrTRGJYLV+/9tubbr9ipz0GKHjmXVsgFPo/+W+2cA8eNcR+XA==}
@@ -5278,10 +5288,6 @@ packages:
   form-data-encoder@1.7.2:
     resolution: {integrity: sha512-qfqtYan3rxrnCk1VYaA4H+Ms9xdpPqvLZa6xmMgFvhO32x7/3J/ExcTd6qpxM0vH2GdMI+poehyBZvqfMTto8A==}
 
-  form-data-encoder@4.1.0:
-    resolution: {integrity: sha512-G6NsmEW15s0Uw9XnCg+33H3ViYRyiM0hMrMhhqQOR8NFc5GhYrI+6I3u7OTw7b91J2g8rtvMBZJDbcGb2YUniw==}
-    engines: {node: '>= 18'}
-
   form-data@4.0.5:
     resolution: {integrity: sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==}
     engines: {node: '>= 6'}
@@ -5289,10 +5295,6 @@ packages:
   formdata-node@4.4.1:
     resolution: {integrity: sha512-0iirZp3uVDjVGt9p49aTaqjk84TrglENEDuqfdlZQ1roC9CWlPk6Avf8EEnZNcAqPonwkG35x4n3ww/1THYAeQ==}
     engines: {node: '>= 12.20'}
-
-  formdata-node@6.0.3:
-    resolution: {integrity: sha512-8e1++BCiTzUno9v5IZ2J6bv4RU+3UKDmqWUQD0MIMVCd9AdhWkO1gw57oo1mNEX1dMq2EGI+FbWz4B92pscSQg==}
-    engines: {node: '>= 18'}
 
   fraction.js@5.3.4:
     resolution: {integrity: sha512-1X1NTtiJphryn/uLQz3whtY6jK3fTqoE3ohKs0tT+Ujr1W59oopxmoEh7Lu5p6vBaPbgoM0bzveAW4Qi5RyWDQ==}
@@ -6834,9 +6836,6 @@ packages:
   scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
 
-  scrapybara@2.5.2:
-    resolution: {integrity: sha512-vM+si6kDrOP1wfJWSSr87rNPldgetXzMe2ndWhnhjPWvTiF/TlDC6LacX0yHGavUC7pDIStwVS5cfjhCsOA9Zg==}
-
   semver@7.7.3:
     resolution: {integrity: sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==}
     engines: {node: '>=10'}
@@ -7091,6 +7090,7 @@ packages:
   tar@7.5.3:
     resolution: {integrity: sha512-ENg5JUHUm2rDD7IvKNFGzyElLXNjachNLp6RaGf4+JOgxXHkqA+gq81ZAMCUmtMtqBsoU62lcp6S27g1LCYGGQ==}
     engines: {node: '>=18'}
+    deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exhorbitant rates) by contacting i@izs.me
 
   testcontainers@10.28.0:
     resolution: {integrity: sha512-1fKrRRCsgAQNkarjHCMKzBKXSJFmzNTiTbhb5E/j5hflRXChEtHvkefjaHlgkNUjfw92/Dq8LTgwQn6RDBFbMg==}
@@ -7453,9 +7453,6 @@ packages:
 
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
-
-  url-join@4.0.1:
-    resolution: {integrity: sha512-jk1+QP6ZJqyOiuEI9AEWQfju/nB2Pw466kbA0LEZljHwKeMgd9WrAEgEGxjPDD2+TNbbb37rTyhEfrCXfuKXnA==}
 
   url@0.11.4:
     resolution: {integrity: sha512-oCwdVC7mTuWiPyjLUz/COz5TLk6wgp0RCsN+wHZ2Ekneac9w8uuV0njcbbie2ME+Vs+d6duwmYuR3HgQXs1fOg==}
@@ -8201,6 +8198,8 @@ snapshots:
   '@eslint/js@8.57.1': {}
 
   '@fastify/busboy@2.1.1': {}
+
+  '@google/generative-ai@0.24.1': {}
 
   '@grpc/grpc-js@1.14.3':
     dependencies:
@@ -11210,8 +11209,6 @@ snapshots:
 
   form-data-encoder@1.7.2: {}
 
-  form-data-encoder@4.1.0: {}
-
   form-data@4.0.5:
     dependencies:
       asynckit: 0.4.0
@@ -11224,8 +11221,6 @@ snapshots:
     dependencies:
       node-domexception: 1.0.0
       web-streams-polyfill: 4.0.0-beta.3
-
-  formdata-node@6.0.3: {}
 
   fraction.js@5.3.4: {}
 
@@ -12920,20 +12915,6 @@ snapshots:
 
   scheduler@0.27.0: {}
 
-  scrapybara@2.5.2:
-    dependencies:
-      form-data: 4.0.5
-      form-data-encoder: 4.1.0
-      formdata-node: 6.0.3
-      node-fetch: 2.7.0
-      qs: 6.14.1
-      readable-stream: 4.7.0
-      url-join: 4.0.1
-      zod: 4.3.5
-      zod-to-json-schema: 3.25.1(zod@4.3.5)
-    transitivePeerDependencies:
-      - encoding
-
   semver@7.7.3: {}
 
   set-function-length@1.2.2:
@@ -13614,8 +13595,6 @@ snapshots:
   uri-js@4.4.1:
     dependencies:
       punycode: 2.3.1
-
-  url-join@4.0.1: {}
 
   url@0.11.4:
     dependencies:

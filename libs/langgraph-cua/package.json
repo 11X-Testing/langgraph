@@ -32,7 +32,9 @@
   "author": "LangChain",
   "license": "MIT",
   "dependencies": {
-    "scrapybara": "^2.4.4",
+    "@google/generative-ai": "^0.24.1",
+    "playwright": "^1.49.0",
+    "uuid": "^11.0.3",
     "zod": "^3.25.76 || ^4"
   },
   "peerDependencies": {

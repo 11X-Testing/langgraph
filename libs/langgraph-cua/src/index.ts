@@ -65,29 +65,6 @@ interface CreateCuaParams<
   StateModifier extends AnnotationRoot<any> = typeof CUAAnnotation
 > {
   /**
-   * The API key to use for Scrapybara.
-   * This can be provided in the configuration, or set as an environment variable (SCRAPYBARA_API_KEY).
-   * @default process.env.SCRAPYBARA_API_KEY
-   */
-  scrapybaraApiKey?: string;
-
-  /**
-   * The number of hours to keep the virtual machine running before it times out.
-   * Must be between 0.01 and 24.
-   * @default 1
-   */
-  timeoutHours?: number;
-
-  /**
-   * Whether or not Zero Data Retention is enabled in the user's OpenAI account. If true,
-   * the agent will not pass the 'previous_response_id' to the model, and will always pass it the full
-   * message history for each request. If false, the agent will pass the 'previous_response_id' to the
-   * model, and only the latest message in the history will be passed.
-   * @default false
-   */
-  zdrEnabled?: boolean;
-
-  /**
    * The maximum number of recursive calls the agent can make.
    * @default 100
    */
@@ -100,11 +77,6 @@ interface CreateCuaParams<
    */
   authStateId?: string;
 
-  /**
-   * The environment to use.
-   * @default "web"
-   */
-  environment?: "web" | "ubuntu" | "windows";
 
   /**
    * The prompt to use for the model. This will be used as the system prompt for the model.
@@ -154,23 +126,15 @@ export function createCua<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   StateModifier extends AnnotationRoot<any> = typeof CUAAnnotation
 >({
-  scrapybaraApiKey,
-  timeoutHours = 1.0,
-  zdrEnabled = false,
   recursionLimit = 100,
   authStateId,
-  environment = "web",
   prompt,
   nodeBeforeAction,
   nodeAfterAction,
   uploadScreenshot,
+  onSafetyConfirmation,
   stateModifier,
 }: CreateCuaParams<StateModifier> = {}) {
-  // Validate timeout_hours is within acceptable range
-  if (timeoutHours < 0.01 || timeoutHours > 24) {
-    throw new Error("timeoutHours must be between 0.01 and 24");
-  }
-
   const nodeBefore =
     nodeBeforeAction ??
     ((async () => ({})) as (state: CUAState) => Promise<CUAUpdate>);
@@ -189,7 +153,7 @@ export function createCua<
     .addNode("nodeBeforeAction", nodeBefore)
     .addNode("nodeAfterAction", nodeAfter)
     .addNode("takeComputerAction", (state, config) =>
-      takeComputerAction(state, config, { uploadScreenshot })
+      takeComputerAction(state, config, { uploadScreenshot, onSafetyConfirmation })
     )
     .addEdge(START, "callModel")
     .addConditionalEdges("callModel", takeActionOrEnd, [
@@ -211,11 +175,7 @@ export function createCua<
   // Configure the graph with the provided parameters
   const configuredGraph = cuaGraph.withConfig({
     configurable: {
-      scrapybaraApiKey,
-      timeoutHours,
-      zdrEnabled,
       authStateId,
-      environment,
       prompt,
     },
     recursionLimit,
@@ -229,6 +189,5 @@ export {
   type CUAUpdate,
   CUAAnnotation,
   CUAConfigurable,
-  type CUAEnvironment,
 } from "./types.js";
 export { getToolOutputs, isComputerCallToolMessage } from "./utils.js";

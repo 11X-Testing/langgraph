@@ -1,53 +1,5 @@
-import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import type { ResponseComputerToolCall } from "openai/resources/responses/responses";
-import {
-  ScrapybaraClient,
-  UbuntuInstance,
-  BrowserInstance,
-  WindowsInstance,
-} from "scrapybara";
-import { getEnvironmentVariable } from "@langchain/core/utils/env";
 import { AIMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
-import { getConfigurationWithDefaults } from "./types.js";
-
-/**
- * Gets the Scrapybara client, using the API key from the graph's configuration object.
- *
- * @param {string} apiKey The API key for Scrapybara.
- * @returns {ScrapybaraClient} The Scrapybara client.
- */
-export function getScrapybaraClient(apiKey: string): ScrapybaraClient {
-  if (!apiKey) {
-    throw new Error(
-      "Scrapybara API key not provided. Please provide one in the configurable fields, or set it as an environment variable (SCRAPYBARA_API_KEY)"
-    );
-  }
-  const client = new ScrapybaraClient({
-    apiKey,
-  });
-  return client;
-}
-
-/**
- * Gets an instance from Scrapybara.
- *
- * @param {string} id The ID of the instance to get.
- * @param {LangGraphRunnableConfig} config The configuration for the runnable.
- * @returns {Promise<UbuntuInstance | BrowserInstance | WindowsInstance>} The instance.
- */
-export async function getInstance(
-  id: string,
-  config: LangGraphRunnableConfig
-): Promise<UbuntuInstance | BrowserInstance | WindowsInstance> {
-  const { scrapybaraApiKey } = getConfigurationWithDefaults(config);
-  if (!scrapybaraApiKey) {
-    throw new Error(
-      "Scrapybara API key not provided. Please provide one in the configurable fields, or set it as an environment variable (SCRAPYBARA_API_KEY)"
-    );
-  }
-  const client = getScrapybaraClient(scrapybaraApiKey);
-  return await client.get(id);
-}
+import { ComputerToolCall } from "./types.js";
 
 /**
  * Checks if the given tool outputs are a computer call.
@@ -57,7 +9,7 @@ export async function getInstance(
  */
 export function isComputerToolCall(
   toolOutputs: unknown
-): toolOutputs is ResponseComputerToolCall[] {
+): toolOutputs is ComputerToolCall[] {
   if (!toolOutputs || !Array.isArray(toolOutputs)) {
     return false;
   }
@@ -67,46 +19,117 @@ export function isComputerToolCall(
 }
 
 /**
- * Stops an instance by its ID.
- *
- * @param {string} id The ID of the instance to stop.
- * @param {ScrapybaraClient} client Optional client to use for stopping the instance.
- * @returns {Promise<void>} A promise that resolves when the instance is stopped.
+ * Maps Gemini tool calls to ComputerToolCall format.
  */
-export async function stopInstance(
-  id: string,
-  client?: ScrapybaraClient
-): Promise<void> {
-  let client_ = client;
-  if (!client_) {
-    client_ = getScrapybaraClient(
-      getEnvironmentVariable("SCRAPYBARA_API_KEY") ?? ""
-    );
+function mapGeminiToolToComputerAction(toolCall: { name: string; args: any; id?: string }): ComputerToolCall | null {
+  const { name, args, id } = toolCall;
+  const call_id = id || "unknown"; // Gemini SDK matching might handle IDs differently, but LangChain provides them.
+
+  const safety_decision = args.safety_decision;
+
+  let action: any = null;
+
+  switch (name) {
+    case "click_at":
+      action = { type: "click", x: args.x, y: args.y, button: "left" };
+      break;
+    case "type_text_at":
+      // Composite action: click then type? Or just pass params. 
+      // take-computer-action needs to be robust. For now mapping to "type"
+      // and ensuring we pass coordinates if available.
+      action = {
+        type: "type",
+        text: args.text,
+        x: args.x,
+        y: args.y,
+        // Gemini implies clicking there first?
+      };
+      break;
+    case "scroll_at":
+      // Gemini sends direction ('up', 'down', 'left', 'right') and magnitude (pixels)
+      // Playwright wheel expects deltaX, deltaY.
+      let scroll_x = 0;
+      let scroll_y = 0;
+      if (args.direction === "up") scroll_y = -args.magnitude;
+      if (args.direction === "down") scroll_y = args.magnitude;
+      if (args.direction === "left") scroll_x = -args.magnitude;
+      if (args.direction === "right") scroll_x = args.magnitude;
+
+      action = { type: "scroll", x: args.x, y: args.y, scroll_x, scroll_y };
+      break;
+
+    case "drag_and_drop":
+      action = {
+        type: "drag",
+        path: [
+          { x: args.x, y: args.y },
+          { x: args.destination_x, y: args.destination_y },
+        ],
+      };
+      break;
+
+    case "key_combination":
+      // Gemini sends "keys" string e.g. "Control+A"
+      // take-computer-action expects array of strings.
+      action = {
+        type: "keypress",
+        keys: args.keys.split("+"),
+      };
+      break;
+
+    case "open_web_browser":
+      action = { type: "open_browser" };
+      break;
+
+    case "navigate":
+      action = { type: "navigate", text: args.url };
+      break;
+
+    default:
+      return null;
   }
-  const instance = await client_.get(id);
-  await instance.stop();
+
+  if (action) {
+    if (safety_decision) {
+      action.safety_decision = safety_decision;
+    }
+    return {
+      type: "computer_call",
+      call_id,
+      action
+    };
+  }
+  return null;
 }
 
 /**
  * Gets the tool outputs from an AIMessage.
  *
  * @param {AIMessage} message The message to get tool outputs from.
- * @returns {ResponseComputerToolCall[] | undefined} The tool outputs from the message, or undefined if there are none.
+ * @returns {ComputerToolCall[] | undefined} The tool outputs from the message, or undefined if there are none.
  */
 export function getToolOutputs(
   message: AIMessage
-): ResponseComputerToolCall[] | undefined {
-  const toolOutputs = message.additional_kwargs?.tool_outputs
-    ? message.additional_kwargs?.tool_outputs
-    : message.response_metadata?.output;
-
-  if (!toolOutputs || !toolOutputs.length) {
-    return undefined;
+): ComputerToolCall[] | undefined {
+  // Check standard tool_calls first (LangChain standard)
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    const actions: ComputerToolCall[] = [];
+    for (const toolCall of message.tool_calls) {
+      const mapped = mapGeminiToolToComputerAction(toolCall);
+      if (mapped) actions.push(mapped);
+    }
+    return actions.length > 0 ? actions : undefined;
   }
 
-  return toolOutputs.filter(
-    (output: Record<string, unknown>) => output.type === "computer_call"
-  );
+  // Fallback for legacy or manual kwargs (if we manually stuff them)
+  const toolOutputs = message.additional_kwargs?.tool_outputs;
+  if (toolOutputs && Array.isArray(toolOutputs)) {
+    return toolOutputs.filter(
+      (output: any) => output.type === "computer_call"
+    ) as ComputerToolCall[];
+  }
+
+  return undefined;
 }
 
 /**
@@ -118,9 +141,11 @@ export function getToolOutputs(
 export function isComputerCallToolMessage(
   message: BaseMessage
 ): message is ToolMessage {
+  // We identify computer tool OUTPUT messages (ToolMessage) 
+  // currently primarily by the "computer_call_output" type in additional_kwargs.
+  // This is set by take-computer-action.ts so it remains consistent.
   return (
     message.getType() === "tool" &&
-    "type" in message.additional_kwargs &&
-    message.additional_kwargs.type === "computer_call_output"
+    message.additional_kwargs?.type === "computer_call_output"
   );
 }
