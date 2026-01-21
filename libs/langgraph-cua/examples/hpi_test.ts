@@ -3,10 +3,19 @@ import "dotenv/config";
 import { createCua } from "../src/index.js";
 import { HumanMessage } from "@langchain/core/messages";
 import { BrowserManager } from "../src/browser-manager.js";
+import * as fs from "fs";
+import * as path from "path";
+
+const SCREENSHOT_DIR = "screenshots";
 
 async function main() {
     console.log("Starting HPI Test Script...");
     console.log(`GOOGLE_API_KEY present: ${!!process.env.GOOGLE_API_KEY}`);
+
+    // Ensure screenshot directory exists
+    if (!fs.existsSync(SCREENSHOT_DIR)) {
+        fs.mkdirSync(SCREENSHOT_DIR);
+    }
 
 
     // Initialize the specific graph
@@ -17,6 +26,18 @@ async function main() {
             console.log(`Decision Type: ${decision.decision}`);
             console.log("AUTOMATICALLY CONFIRMING (Test Mode)");
             return true;
+        },
+        uploadScreenshot: async (dataUri) => {
+            // Data URI format: data:image/png;base64,....
+            const base64Data = dataUri.replace(/^data:image\/png;base64,/, "");
+            const filename = `screenshot_${Date.now()}.png`;
+            const filepath = path.join(SCREENSHOT_DIR, filename);
+
+            fs.writeFileSync(filepath, base64Data, 'base64');
+            console.log(`Saved screenshot to ${filepath}`);
+
+            // Return valid data URI so the model can still use it (inline)
+            return dataUri;
         }
     });
 
