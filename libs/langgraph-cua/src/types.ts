@@ -75,6 +75,11 @@ export interface ComputerAction {
   keys?: string[];
   button?: string;
   path?: { x: number; y: number }[];
+  direction?: "up" | "down" | "left" | "right";
+  magnitude?: number;
+  press_enter?: boolean;
+  clear_before_typing?: boolean;
+  url?: string; // For navigate
   safety_decision?: {
     explanation: string;
     decision: "require_confirmation" | "proceed";

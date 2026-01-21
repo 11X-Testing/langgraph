@@ -42,6 +42,8 @@ function mapGeminiToolToComputerAction(toolCall: { name: string; args: any; id?:
         text: args.text,
         x: args.x,
         y: args.y,
+        press_enter: args.press_enter,
+        clear_before_typing: args.clear_before_typing,
         // Gemini implies clicking there first?
       };
       break;
@@ -85,8 +87,33 @@ function mapGeminiToolToComputerAction(toolCall: { name: string; args: any; id?:
       action = { type: "navigate", text: args.url };
       break;
 
+    case "hover_at":
+      action = { type: "hover", x: args.x, y: args.y };
+      break;
+
+    case "go_back":
+      action = { type: "go_back" };
+      break;
+
+    case "go_forward":
+      action = { type: "go_forward" };
+      break;
+
+    case "wait_5_seconds":
+      action = { type: "wait", duration: 5000 };
+      break;
+
+    case "scroll_document":
+      action = {
+        type: "scroll_document",
+        direction: args.direction,
+        magnitude: args.magnitude // Sometimes provided? SDK says just direction usually for doc scroll but generic scroll has magnitude
+      };
+      break;
+
     default:
-      return null;
+      console.error(`[CUA Error] Unsupported Gemini tool called: ${name}`, args);
+      throw new Error(`Unsupported Gemini tool: ${name}`);
   }
 
   if (action) {

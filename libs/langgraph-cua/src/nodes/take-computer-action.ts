@@ -162,9 +162,56 @@ export async function takeComputerAction(
         await page.mouse.wheel(action.scroll_x ?? 0, action.scroll_y ?? 0);
         break;
       case "type":
+        if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.click(action.x, action.y);
+        }
+        if (action.clear_before_typing) {
+          // How to clear? Maybe select all and delete? Or empty fill.
+          // Playwright .fill() clears first.
+          // But we can't always selector targeting.
+          // Simulate Ctrl+A Backspace
+          await page.keyboard.press("Meta+A");
+          await page.keyboard.press("Backspace");
+        }
         if (action.text) {
           await page.keyboard.type(action.text);
         }
+        if (action.press_enter) {
+          await page.keyboard.press("Enter");
+        }
+        break;
+
+      case "hover":
+        if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.move(action.x, action.y);
+        }
+        break;
+
+      case "go_back":
+        await page.goBack();
+        break;
+
+      case "go_forward":
+        await page.goForward();
+        break;
+
+      case "scroll_document":
+        // Scroll full document or large chunk?
+        // Gemini docs say "direction".
+        const scrollAmount = action.magnitude ?? 800; // Default page chunk
+        let sdx = 0;
+        let sdy = 0;
+        if (action.direction === "down") sdy = scrollAmount;
+        if (action.direction === "up") sdy = -scrollAmount;
+        if (action.direction === "left") sdx = -scrollAmount;
+        if (action.direction === "right") sdx = scrollAmount;
+
+        await page.mouse.wheel(sdx, sdy);
+        break;
+
+      case "wait":
+        // action.duration (ms)
+        await sleep(action.duration ?? 5000); // 5000 from wait_5_seconds
         break;
       default:
         throw new Error(
